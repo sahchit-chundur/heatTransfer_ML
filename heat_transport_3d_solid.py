@@ -51,12 +51,7 @@ N_ROCK  = 5          # rock sublayers per side (default)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_transport_matrix(b, u_face, v_face, dx, dy, H_s, n_rock=N_ROCK):
-    """
-    Assemble (1+2*n_rock)*N × (1+2*n_rock)*N operator L via COO format.
 
-    All loops over grid cells are replaced by NumPy array operations.
-    The only remaining Python loops iterate over 2*(n_rock-1) rock layers.
-    """
     nx, ny    = b.shape
     N         = nx * ny
     N_total   = N * (1 + 2 * n_rock)
