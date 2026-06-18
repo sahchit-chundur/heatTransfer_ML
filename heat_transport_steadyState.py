@@ -107,7 +107,7 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
     H_s_layer  = H_s / n_rock       # thickness of one rock sublayer
 
     k_fluid    = 0.6      # W/m/K
-    Nu         = 4.117    # Nusselt — laminar slot flow (isoflux)
+    Nu         = 3.771    # Nusselt — laminar slot flow (isothermal)
 
     KK = np.arange(N).reshape(nx, ny)   # flat cell indices
 
@@ -356,8 +356,6 @@ def plot_steady_state_views(T_fluid, T_inner, T_rock, side_T,
     plt.tight_layout()
     plt.show()
     return fig
-
-
 
 # ---------------------------------------------------------------------------
 # Main
