@@ -37,8 +37,8 @@ RHO_C   = 4.182e6     # fluid  volumetric heat cap. [J/m³/K]
 KAPPA_S = 1.5e-6      # rock   thermal diffusivity  [m²/s]
 RHO_C_S = 2.16e6      # rock   volumetric heat cap. [J/m³/K]
 N_ROCK  = 5           # rock sublayers per side (default)
-
-
+K_FLUID   = 0.6      # W/m/K
+NU         = 3.771    # Nusselt — laminar slot flow (isothermal)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ def _make_side_slice(T_vec, N, nx, ny, n_rock, slice_j):
 # Steady-state solver
 # ---------------------------------------------------------------------------
 
-def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
+def solve_heat(b, u_face, v_face, dx, dy, T_init_1, T_init_2, T_in, H_s, n_rock=N_ROCK):
     """
     Assemble and solve the steady-state heat-transport system.
 
@@ -106,8 +106,7 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
     N_total    = N * (1 + 2 * n_rock)
     H_s_layer  = H_s / n_rock       # thickness of one rock sublayer
 
-    k_fluid    = 0.6      # W/m/K
-    Nu         = 3.771    # Nusselt — laminar slot flow (isothermal)
+    
 
     KK = np.arange(N).reshape(nx, ny)   # flat cell indices
 
@@ -183,7 +182,7 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
     _add(KK[-1, :], KK[-1, :], np.abs(u_face[-1, :]) / dx)
 
     # ── Fluid–rock wall exchange ──────────────────────────────────────────
-    h_local = (Nu * k_fluid) / (2.0 * b)   # W/m²/K  (nx, ny)
+    h_local = (NU * K_FLUID) / (2.0 * b)   # W/m²/K  (nx, ny)
     hf_coef = h_local / RHO_C              # m/s     (nx, ny)
     k_all   = KK.ravel()                   # (N,)
 
@@ -196,14 +195,14 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
     # 2. ROCK BLOCKS  (side = 0 bottom, side = 1 top)
     # =========================================================
     # Through-thickness diffusion coefficient between adjacent rock layers:
-    #   d_z = κ_s / H_s_layer   [1/s · m⁻¹? No: units check]
+    #   d_z = κ_s / H_s_layer 
     # The steady FVM equation for rock layer (side, l) per unit area:
     #   (rock gains from l-1 or fluid) + (rock loses to l+1 or outer BC)
     # We use a diffusion coefficient scaled by the layer thickness so that
     # the *residual* has units of [K/s], consistent with the fluid block.
-    d_z  = KAPPA_S / H_s_layer**2         # [1/s]  through-thickness
-    d_xr = KAPPA_S / dx**2                # [1/s]  in-plane x
-    d_yr = KAPPA_S / dy**2                # [1/s]  in-plane y
+    d_z  = KAPPA_S / H_s_layer         # [m/s]  through-thickness
+    d_xr = KAPPA_S* H_s_layer / dx**2              # [m/s]  in-plane x
+    d_yr = KAPPA_S * H_s_layer / dy**2                # [m/s]  in-plane y
     hs_coef = h_local / RHO_C_S           # [m/s] → exchange with fluid
 
     for side in range(2):
@@ -256,12 +255,11 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
 
     # Dirichlet rows: fluid inlet (i=0, all j) + outer rock layers
     inlet_rows = KK[0, :].ravel()                    # (ny,)
-    outer_rows = np.concatenate([
-        np.arange(rock_off(s, n_rock - 1),
-                  rock_off(s, n_rock - 1) + N)
-        for s in range(2)
-    ])
-    dirichlet_rows = np.concatenate([inlet_rows, outer_rows])
+    outer_rows_1 = np.arange(rock_off(0, n_rock - 1),
+                  rock_off(0, n_rock - 1) + N)
+    outer_rows_2 = np.arange(rock_off(1, n_rock - 1),
+                  rock_off(1, n_rock - 1) + N) 
+    dirichlet_rows = np.concatenate([inlet_rows, outer_rows_1,outer_rows_2])
 
     mask  = ~np.isin(all_r, dirichlet_rows)
     A_coo = coo_matrix((all_v[mask], (all_r[mask], all_c[mask])),
@@ -276,11 +274,14 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=N_ROCK):
         rhs[row] = T_in
 
     # Outer rock layers: T = T_init
-    for row in outer_rows:
+    for row in outer_rows_1:
         A_lil[row, :] = 0
         A_lil[row, row] = 1.0
-        rhs[row] = T_init
-
+        rhs[row] = T_init_1
+    for row in outer_rows_2:
+        A_lil[row, :] = 0
+        A_lil[row, row] = 1.0
+        rhs[row] = T_init_2
     # =========================================================
     # 4. SOLVE
     # =========================================================
@@ -356,6 +357,18 @@ def plot_steady_state_views(T_fluid, T_inner, T_rock, side_T,
     plt.tight_layout()
     plt.show()
     return fig
+# ---------------------------------------------------------------------------
+# H_eff calculation
+# ---------------------------------------------------------------------------
+
+"NOTE: IN ORDER TO USE THIS VALUE IN SANDBOX, ONLY DIVIDE BY Lx!!!!!!"
+def calculate_h_eff(T_fluid,u_face,T_in, T_init_1,T_init_2,Lx,Ly,dy):
+    T_delta = T_fluid[-1,:]-T_in            #delta_T for outgoing fluid
+    u_out = u_face[-1,:]                    # Darcy fluxes out
+    E_out = np.dot(T_delta,u_out)*RHO_C*dy  # Energy out
+    Q=E_out/Lx/Ly/2                         # Heat flux (Energy/interfacial surface area)
+    h_eff = np.abs(Q/(T_in-0.5*T_init_1-0.5*T_init_2))
+    return h_eff
 
 # ---------------------------------------------------------------------------
 # Main
@@ -366,11 +379,12 @@ if __name__ == '__main__':
     nx, ny = 120, 120
     dx, dy = Lx / nx, Ly / ny
     mu     = 1e-3
-    p_in   = 1000000.0
+    p_in   = 50_000.0
     p_out  = 0.0
     H_s    = 0.05
     n_rock = 5
-    T_init = 100.0
+    T_init_1 = 100.0
+    T_init_2 =100.0
     T_in   = 50.0
     b_mean = 1.0e-4
     b_std  = 1.0
@@ -384,7 +398,12 @@ if __name__ == '__main__':
                  title='2D fracture flow — variable aperture (FVM)')
 
     T_fluid, T_inner, T_rock, side_T = solve_heat(
-        b, u_face, v_face, dx, dy, T_init, T_in, H_s, n_rock=n_rock)
+        b, u_face, v_face, dx, dy, T_init_1, T_init_2, T_in, H_s, n_rock=n_rock)
 
     plot_steady_state_views(T_fluid, T_inner, T_rock, side_T,
                             dx, dy, H_s, n_rock)
+    h_local = (NU * K_FLUID) / (2.0 * b)
+    h_spatial=np.average(h_local)
+    h_eff = calculate_h_eff(T_fluid, u_face,T_in,T_init_1,T_init_2,Lx,Ly,dy)
+    print(f'Spatial Mean H_eff: {h_spatial}')
+    print(f'Calculated H_eff: {h_eff}')
