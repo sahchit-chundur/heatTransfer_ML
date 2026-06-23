@@ -36,13 +36,13 @@ KAPPA   = 1.4e-7      # fluid  thermal diffusivity  [m²/s]
 RHO_C   = 4.182e6     # fluid  volumetric heat cap. [J/m³/K]
 KAPPA_S = 1.5e-6      # rock   thermal diffusivity  [m²/s]
 RHO_C_S = 2.16e6      # rock   volumetric heat cap. [J/m³/K]
-N_ROCK  = 5           # rock sublayers per side (default)
-K_FLUID   = 0.6      # W/m/K
-NU         = 3.771    # Nusselt — laminar slot flow (isothermal)
+N_ROCK  = 10           # rock sublayers per side (default)
+K_FLUID = 0.6         # W/m/K
+NU      = 3.771       # Nusselt — laminar slot flow (isothermal)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 def _make_side_slice(T_vec, N, nx, ny, n_rock, slice_j):
     """
     Assemble a cross-section (x vs z) through the full rock+fluid stack
@@ -74,11 +74,9 @@ def _make_side_slice(T_vec, N, nx, ny, n_rock, slice_j):
 
     return np.array(rows)   # (1 + 2*n_rock, nx)
 
-
 # ---------------------------------------------------------------------------
 # Steady-state solver
 # ---------------------------------------------------------------------------
-
 def solve_heat(b, u_face, v_face, dx, dy, T_init_1, T_init_2, T_in, H_s, n_rock=N_ROCK):
     """
     Assemble and solve the steady-state heat-transport system.
@@ -311,11 +309,9 @@ def solve_heat(b, u_face, v_face, dx, dy, T_init_1, T_init_2, T_in, H_s, n_rock=
 
     return T_fluid, T_inner, T_rock, side_T
 
-
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
-
 def plot_steady_state_views(T_fluid, T_inner, T_rock, side_T,
                             dx, dy, H_s, n_rock):
     """Four-panel steady-state thermal dashboard."""
@@ -357,11 +353,10 @@ def plot_steady_state_views(T_fluid, T_inner, T_rock, side_T,
     plt.tight_layout()
     plt.show()
     return fig
+
 # ---------------------------------------------------------------------------
 # H_eff calculation
 # ---------------------------------------------------------------------------
-
-"NOTE: IN ORDER TO USE THIS VALUE IN SANDBOX, ONLY DIVIDE BY Lx!!!!!!"
 def calculate_h_eff(T_fluid,u_face,T_in, T_init_1,T_init_2,Lx,Ly,dy):
     T_delta = T_fluid[-1,:]-T_in            #delta_T for outgoing fluid
     u_out = u_face[-1,:]                    # Darcy fluxes out
@@ -373,7 +368,6 @@ def calculate_h_eff(T_fluid,u_face,T_in, T_init_1,T_init_2,Lx,Ly,dy):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
 if __name__ == '__main__':
     Lx, Ly = 0.80, 0.80
     nx, ny = 120, 120
@@ -381,13 +375,13 @@ if __name__ == '__main__':
     mu     = 1e-3
     p_in   = 50_000.0
     p_out  = 0.0
-    H_s    = 0.05
     n_rock = 5
     T_init_1 = 100.0
-    T_init_2 =100.0
+    T_init_2 =120.0
     T_in   = 50.0
     b_mean = 1.0e-4
     b_std  = 1.0
+    H_s    = b_mean *1e3
 
     b = generate_field(nx, ny, dx, dy, b_mean, b_std, L_c=0.1, angle=7*np.pi/16)
 
